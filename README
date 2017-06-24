@@ -5,3 +5,7 @@ $./echo-server [-port xxx] [x.y.z.w]
 xxx => port to listen on. Default is 8001
 x.y.z.w => IP address. Default is INADDR_ANY
 
+Limitations:
+    - can handle only a single connection.
+    - Works with IPv4 addresses only
+

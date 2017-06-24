@@ -16,26 +16,24 @@ int runserver(int port, char* ipstr);
 
 int runserver(int port, char* ipstr)
 {
+	int sockfd = -1;
+	int new_fd = -1;
+	char *buf = NULL;
+	int ret = FAILURE;
 	struct in_addr ip;
 
 	if(port == 0)
 		port = LISTEN_PORT;
 
-	if(ipstr == NULL)
-		ip.s_addr = htonl(INADDR_ANY);
-	else
-		if(1 != inet_pton(AF_INET, ipstr, &ip)) {
-			fprintf(stderr, "%s : Not a valid ip", ipstr);
-			return FAILURE;
-		}
+	if(ipstr == NULL) ip.s_addr = htonl(INADDR_ANY);
+	else if(1 != inet_pton(AF_INET, ipstr, &ip)) {
+		fprintf(stderr, "%s : Not a valid ip", ipstr);
+		goto err;
+	}
 
-	int sockfd;
-
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	
-	if(sockfd < 0) {
+	if(0 > (sockfd = socket(PF_INET, SOCK_STREAM, 0))) {
 		fprintf(stderr, "Error creating socket\n");
-		return FAILURE;
+		goto err;
 	}
 
 	struct sockaddr_in s;
@@ -45,31 +43,27 @@ int runserver(int port, char* ipstr)
 	s.sin_addr.s_addr = ip.s_addr;
 
 	if(bind(sockfd, (struct sockaddr *)&s, sizeof(s))) {
-		fprintf(stderr, "Bind failed\n");
-		return FAILURE;
+		fprintf(stderr, "Bind failed. errno=%d\n", errno);
+		goto err;
 	}
 
 	if(listen(sockfd, LISTEN_BACKLOG)) {
-		fprintf(stderr, "listen failed\n");
-		return FAILURE;
+		fprintf(stderr, "listen failed. errno=%d\n", errno);
+		goto err;
 	}
-	if(ipstr)
-		printf("Listening on %s:%d\n", ipstr, port);
-	else
-		printf("Listening on port %d\n", port);
 
-	int new_fd = accept(sockfd, NULL, NULL);
-	if(new_fd < 0) {
-		fprintf(stderr, "Accept failed\n");
-		return FAILURE;
+	if(ipstr) printf("Listening on %s:%d\n", ipstr, port);
+	else printf("Listening on port %d\n", port);
+
+	if(0 > (new_fd = accept(sockfd, NULL, NULL))) {
+		fprintf(stderr, "Accept failed. errno=%d\n", errno);
+		goto err;
 	}
 	
-	char *buf = malloc(READBUF_SIZE);
-	if(buf == NULL) {
+	/* READBUF_SIZE + 1 for null('\0') character */
+	if(NULL == (buf = malloc(READBUF_SIZE+1))) {
 		fprintf(stderr, "Memory allocation failed\n");
-		close(new_fd);
-		close(sockfd);
-		return FAILURE;
+		goto err;
 	}
 	
 	int i;
@@ -80,24 +74,24 @@ int runserver(int port, char* ipstr)
 	
 	if(i == 0) {
 		printf("\nconnection closed\n");
-		close(new_fd);
-		close(sockfd);
-		return 0;
-	} else {
+		ret = 0;
+	}else {
 		fprintf(stderr, "Read error: %d\n", errno);
-		close(new_fd);
-		close(sockfd);
-		return FAILURE;
+		goto err;
 	}
-	/* Should never reach here */
-	return 0;
+
+	err:
+	if(sockfd > -1) close(sockfd);
+	if(new_fd > -1) close(new_fd);
+	if(buf) free(buf);
+	return ret;
 }
 
 int main(int argc, char* argv[])
 {
-	int i = 1;
 	int port = 0;
 	char *ip = NULL;
+	int i = 1;
 	while(argc > 1)
 	{
 		if(argc > 2 && 0 == strcmp(argv[i], "-port")) {
@@ -105,11 +99,11 @@ int main(int argc, char* argv[])
 			i++;
 			port = atoi(argv[i]);
 			argc--;
-		} else if(ip == NULL) {
+		}else if(ip == NULL) {
 			ip = argv[i];
 			i++;
 			argc--;
-		} else {
+		}else {
 			fprintf(stderr, "malformed command line\n");
 			return FAILURE;
 		}
