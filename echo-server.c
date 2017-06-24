@@ -13,6 +13,19 @@
 #define FAILURE (-1)
 
 int runserver(int port, char* ipstr, int echo_locally);
+void print_client_details(struct sockaddr_in *clnt_addr);
+
+void print_client_details(struct sockaddr_in *clnt_addr)
+{
+	char buf[INET_ADDRSTRLEN];
+
+	if(NULL == inet_ntop(AF_INET, &(clnt_addr->sin_addr), buf, INET_ADDRSTRLEN)) {
+		fprintf(stderr, "Connection established, but unable to get the client details.\n");
+		return;
+	}
+	printf("Accepted a connection from %s:%d\n", buf, ntohs(clnt_addr->sin_port));
+	return;
+}
 
 int runserver(int port, char* ipstr, int echo_locally)
 {
@@ -57,14 +70,21 @@ int runserver(int port, char* ipstr, int echo_locally)
 		goto err;
 	}
 
+	struct sockaddr_in clnt_addr;
+	int clnt_len;
 	while(1) {
 		if(ipstr) printf("Listening on %s:%d\n", ipstr, port);
 		else printf("Listening on port %d\n", port);
 
-		if(0 > (new_fd = accept(sockfd, NULL, NULL))) {
+		clnt_len = sizeof(clnt_addr);
+		memset(&clnt_addr, 0 , clnt_len);
+
+		if(0 > (new_fd = accept(sockfd, (struct sockaddr *)&clnt_addr, &clnt_len))) {
 			fprintf(stderr, "Accept failed. errno=%d\n", errno);
 			goto err;
 		}
+
+		print_client_details(&clnt_addr);
 
 		int i, j, k;
 		while((i = recv(new_fd, buf, READBUF_SIZE, 0))>0) {

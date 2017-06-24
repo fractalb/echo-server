@@ -1,10 +1,14 @@
 Example echo server application.
 
-$./echo-server [-e] [-p xxx] [x.y.z.w]
+Run make inside the folder and execute the binary as shown below.
 
--e => echo locally (on the server side)
--p xxx => port to listen on. Default is 8001
-x.y.z.w => IP address. Default is INADDR_ANY
+	$ cd <source-dir>
+	$ make
+	$ ./echo-server [-e] [-p xxx] [x.y.z.w]
+
+	'-e' => echo locally (on the server side)
+	'-p xxx' => port to listen on. Default is 8001
+	'x.y.z.w' => IP address. Default is INADDR_ANY
 
 Limitations:
     - can handle only a single connection.
