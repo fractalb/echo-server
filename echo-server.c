@@ -19,7 +19,6 @@ int runserver(int port, char* ipstr, int echo_locally)
 	int sockfd = -1;
 	int new_fd = -1;
 	char *buf = NULL;
-	int ret = FAILURE;
 	struct in_addr ip;
 
 	if(port == 0)
@@ -32,7 +31,7 @@ int runserver(int port, char* ipstr, int echo_locally)
 	}
 
 	if(0 > (sockfd = socket(PF_INET, SOCK_STREAM, 0))) {
-		fprintf(stderr, "Error creating socket\n");
+		fprintf(stderr, "Unable to create a socket. errno=%d\n", errno);
 		goto err;
 	}
 
@@ -48,7 +47,7 @@ int runserver(int port, char* ipstr, int echo_locally)
 	}
 
 	if(listen(sockfd, LISTEN_BACKLOG)) {
-		fprintf(stderr, "listen failed. errno=%d\n", errno);
+		fprintf(stderr, "Listen failed. errno=%d\n", errno);
 		goto err;
 	}
 
@@ -83,7 +82,7 @@ int runserver(int port, char* ipstr, int echo_locally)
 			}
 		}
 
-		if(i == 0) printf("\nconnection closed\n");
+		if(i == 0) printf("\nConnection closed\n");
 		else {
 			fprintf(stderr, "Read error: %d\n", errno);
 			goto err;
@@ -94,30 +93,34 @@ int runserver(int port, char* ipstr, int echo_locally)
 	if(sockfd > -1) close(sockfd);
 	if(new_fd > -1) close(new_fd);
 	if(buf) free(buf);
-	return ret;
+	return FAILURE;
 }
 
 int main(int argc, char* argv[])
 {
 	int port = 0;
 	char *ip = NULL;
+	int echo_locally = 0/*False*/;
 	int i = 1;
-	while(argc > 1)
+	while(i < argc)
 	{
-		if(argc > 2 && 0 == strcmp(argv[i], "-port")) {
-			argc--;
+		if(0 == strcmp(argv[i], "-e")) {
+		/* Echo locally */
+			i++;
+			echo_locally = 1/*True*/;
+		}else if(0 == strcmp(argv[i], "-p")) {
+		/* port number. listen on this port */
 			i++;
 			port = atoi(argv[i]);
-			argc--;
+			i++;
 		}else if(ip == NULL) {
 			ip = argv[i];
 			i++;
-			argc--;
 		}else {
 			fprintf(stderr, "malformed command line\n");
 			return FAILURE;
 		}
 	}
 
-	return runserver(port, ip, 1/*True*/);
+	return runserver(port, ip, echo_locally);
 }

@@ -1,8 +1,9 @@
 Example echo server application.
 
-$./echo-server [-port xxx] [x.y.z.w]
+$./echo-server [-e] [-p xxx] [x.y.z.w]
 
-xxx => port to listen on. Default is 8001
+-e => echo locally (on the server side)
+-p xxx => port to listen on. Default is 8001
 x.y.z.w => IP address. Default is INADDR_ANY
 
 Limitations:
