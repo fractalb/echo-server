@@ -12,9 +12,9 @@
 #define LISTEN_PORT 8001
 #define FAILURE (-1)
 
-int runserver(int port, char* ipstr);
+int runserver(int port, char* ipstr, int echo_locally);
 
-int runserver(int port, char* ipstr)
+int runserver(int port, char* ipstr, int echo_locally)
 {
 	int sockfd = -1;
 	int new_fd = -1;
@@ -52,32 +52,42 @@ int runserver(int port, char* ipstr)
 		goto err;
 	}
 
-	if(ipstr) printf("Listening on %s:%d\n", ipstr, port);
-	else printf("Listening on port %d\n", port);
-
-	if(0 > (new_fd = accept(sockfd, NULL, NULL))) {
-		fprintf(stderr, "Accept failed. errno=%d\n", errno);
-		goto err;
-	}
-	
 	/* READBUF_SIZE + 1 for null('\0') character */
 	if(NULL == (buf = malloc(READBUF_SIZE+1))) {
 		fprintf(stderr, "Memory allocation failed\n");
 		goto err;
 	}
-	
-	int i;
-	while((i = recv(new_fd, buf, READBUF_SIZE, 0))>0) {
-		buf[i] = '\0';
-		fputs(buf, stdout);
-	}
-	
-	if(i == 0) {
-		printf("\nconnection closed\n");
-		ret = 0;
-	}else {
-		fprintf(stderr, "Read error: %d\n", errno);
-		goto err;
+
+	while(1) {
+		if(ipstr) printf("Listening on %s:%d\n", ipstr, port);
+		else printf("Listening on port %d\n", port);
+
+		if(0 > (new_fd = accept(sockfd, NULL, NULL))) {
+			fprintf(stderr, "Accept failed. errno=%d\n", errno);
+			goto err;
+		}
+
+		int i, j, k;
+		while((i = recv(new_fd, buf, READBUF_SIZE, 0))>0) {
+			if(echo_locally) {
+				buf[i] = '\0';
+				fputs(buf, stdout);
+			}
+			k = 0;
+			while(i != k) {
+				if(0 > (j = send(new_fd, buf+k, i-k, 0))) {
+					fprintf(stderr, "Send failure. errno=%d\n", errno);
+					goto err;
+				}
+				k += j;
+			}
+		}
+
+		if(i == 0) printf("\nconnection closed\n");
+		else {
+			fprintf(stderr, "Read error: %d\n", errno);
+			goto err;
+		}
 	}
 
 	err:
@@ -109,5 +119,5 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	return runserver(port, ip);
+	return runserver(port, ip, 1/*True*/);
 }
