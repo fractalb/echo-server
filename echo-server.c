@@ -128,13 +128,13 @@ int main(int argc, char* argv[])
 		/* Echo locally */
 			i++;
 			echo_locally = 1/*True*/;
-		}else if(0 == strcmp(argv[i], "-p")) {
+		}else if(0 == strcmp(argv[i], "-ip")) {
 		/* port number. listen on this port */
 			i++;
-			port = atoi(argv[i]);
-			i++;
-		}else if(ip == NULL) {
 			ip = argv[i];
+			i++;
+		}else if(port == 0) {
+			port = atoi(argv[i]);
 			i++;
 		}else {
 			fprintf(stderr, "malformed command line\n");

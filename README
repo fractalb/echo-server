@@ -4,11 +4,11 @@ Run make inside the folder and execute the binary as shown below.
 
 	$ cd <source-dir>
 	$ make
-	$ ./echo-server [-e] [-p xxx] [x.y.z.w]
+	$ ./echo-server [-e] [-p xxx] [xxx]
 
 	'-e' => echo locally (on the server side)
-	'-p xxx' => port to listen on. Default is 8001
-	'x.y.z.w' => IP address. Default is INADDR_ANY
+	'-ip x.y.z.w' => IP address. Default is INADDR_ANY
+	'xxx' => port to listen on. Default is 8001
 
 Limitations:
     - can handle only a single connection.
