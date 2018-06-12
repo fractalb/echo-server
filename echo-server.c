@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <errno.h>
 
 #define READBUF_SIZE 20
@@ -12,7 +13,7 @@
 #define LISTEN_PORT 8001
 #define FAILURE (-1)
 
-int runserver(int port, char* ipstr, int echo_locally);
+int runserver(int port, char* ipstr, bool echo_locally);
 void print_client_details(struct sockaddr_in *clnt_addr);
 
 void print_client_details(struct sockaddr_in *clnt_addr)
@@ -27,7 +28,7 @@ void print_client_details(struct sockaddr_in *clnt_addr)
 	return;
 }
 
-int runserver(int port, char* ipstr, int echo_locally)
+int runserver(int port, char* ipstr, bool echo_locally)
 {
 	int sockfd = -1;
 	int new_fd = -1;
@@ -71,8 +72,8 @@ int runserver(int port, char* ipstr, int echo_locally)
 	}
 
 	struct sockaddr_in clnt_addr;
-	int clnt_len;
-	while(1) {
+	socklen_t clnt_len;
+	while(true) {
 		if(ipstr) printf("Listening on %s:%d\n", ipstr, port);
 		else printf("Listening on port %d\n", port);
 
@@ -120,14 +121,14 @@ int main(int argc, char* argv[])
 {
 	int port = 0;
 	char *ip = NULL;
-	int echo_locally = 0/*False*/;
+	bool echo_locally = false;
 	int i = 1;
 	while(i < argc)
 	{
 		if(0 == strcmp(argv[i], "-e")) {
 		/* Echo locally */
 			i++;
-			echo_locally = 1/*True*/;
+			echo_locally = true;
 		}else if(0 == strcmp(argv[i], "-ip")) {
 		/* port number. listen on this port */
 			i++;

@@ -1,5 +1,6 @@
 
 echo-server
+a.out
 *.o
 *.d
 .rename-info
