@@ -65,7 +65,7 @@ int runserver(int port, char* ipstr, bool echo_locally)
 		goto err;
 	}
 
-	/* READBUF_SIZE + 1 for null('\0') character */
+	/* READBUF_SIZE + 1 for NUL('\0') character */
 	if(NULL == (buf = malloc(READBUF_SIZE+1))) {
 		fprintf(stderr, "Memory allocation failed\n");
 		goto err;
