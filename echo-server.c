@@ -20,12 +20,12 @@ void print_client_details(struct sockaddr_in *clnt_addr)
 {
 	char buf[INET_ADDRSTRLEN];
 
-	if (NULL ==
-	    inet_ntop(AF_INET, &(clnt_addr->sin_addr), buf, INET_ADDRSTRLEN)) {
+	if (inet_ntop(AF_INET, &(clnt_addr->sin_addr), buf, INET_ADDRSTRLEN) == NULL) {
 		fprintf(stderr,
 			"Connection established, but unable to get the client details.\n");
 		return;
 	}
+
 	printf("Accepted a connection from %s:%d\n", buf,
 	       ntohs(clnt_addr->sin_port));
 	return;
@@ -36,19 +36,19 @@ int runserver(int port, char *ipstr, bool echo_locally)
 	int sockfd = -1;
 	int new_fd = -1;
 	char *buf = NULL;
-	struct in_addr ip;
+	struct in_addr ip = { 0 };
 
 	if (port == 0)
 		port = LISTEN_PORT;
 
-	if (ipstr == NULL)
+	if (ipstr == NULL) {
 		ip.s_addr = htonl(INADDR_ANY);
-	else if (1 != inet_pton(AF_INET, ipstr, &ip)) {
+	} else if (1 != inet_pton(AF_INET, ipstr, &ip)) {
 		fprintf(stderr, "%s : Not a valid ip", ipstr);
 		goto err;
 	}
 
-	if (0 > (sockfd = socket(PF_INET, SOCK_STREAM, 0))) {
+	if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
 		fprintf(stderr, "Unable to create a socket. errno=%d\n", errno);
 		goto err;
 	}
@@ -70,7 +70,8 @@ int runserver(int port, char *ipstr, bool echo_locally)
 	}
 
 	/* READBUF_SIZE + 1 for NUL('\0') character */
-	if (NULL == (buf = malloc(READBUF_SIZE + 1))) {
+	buf = malloc(READBUF_SIZE + 1);
+	if (buf == NULL) {
 		fprintf(stderr, "Memory allocation failed\n");
 		goto err;
 	}
@@ -86,8 +87,9 @@ int runserver(int port, char *ipstr, bool echo_locally)
 		clnt_len = sizeof(clnt_addr);
 		memset(&clnt_addr, 0, clnt_len);
 
-		if (0 > (new_fd = accept(sockfd, (struct sockaddr *)&clnt_addr,
-					 &clnt_len))) {
+		new_fd = accept(sockfd, (struct sockaddr *)&clnt_addr,
+					 &clnt_len);
+		if (new_fd < 0) {
 			fprintf(stderr, "Accept failed. errno=%d\n", errno);
 			goto err;
 		}
@@ -96,25 +98,26 @@ int runserver(int port, char *ipstr, bool echo_locally)
 
 		int i, j, k;
 		while ((i = recv(new_fd, buf, READBUF_SIZE, 0)) > 0) {
+
 			if (echo_locally) {
 				buf[i] = '\0';
 				fputs(buf, stdout);
 			}
-			k = 0;
-			while (i != k) {
-				if (0 > (j = send(new_fd, buf + k, i - k, 0))) {
+
+			for (k = 0; k != i; k += j ) {
+
+				if ((j = send(new_fd, buf + k, i - k, 0)) < 0) {
 					fprintf(stderr,
 						"Send failure. errno=%d\n",
 						errno);
 					goto err;
 				}
-				k += j;
 			}
 		}
 
-		if (i == 0)
+		if (i == 0) {
 			printf("\nConnection closed\n");
-		else {
+		} else {
 			fprintf(stderr, "Read error: %d\n", errno);
 			goto err;
 		}
