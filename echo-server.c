@@ -51,10 +51,8 @@ static void do_echo(int fd, char *buf, int size, bool echo_locally)
 		return;
 
 	while ((i = recv(fd, buf, READBUF_SIZE, 0)) > 0) {
-		if (echo_locally) {
-			buf[i] = '\0';
-			fputs(buf, stdout);
-		}
+		if (echo_locally)
+			fwrite(buf, 1, i, stdout);
 
 		for (k = 0; k != i; k += j) {
 			if ((j = send(fd, buf + k, i - k, 0)) < 0) {
