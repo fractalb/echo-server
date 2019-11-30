@@ -1,12 +1,12 @@
 
 CC := gcc
 CFLAGS := -Wall -pedantic
-LDFLAGS :=
+LDFLAGS := -lpthread
 
 all: echo-server
 
 echo-server: echo-server.o
-	$(CC) $(LDFLAGS) -o echo-server ./echo-server.o
+	$(CC) -o echo-server ./echo-server.o $(LDFLAGS)
 
 echo-server.o: echo-server.c
 	$(CC) $(CFLAGS) -c echo-server.c

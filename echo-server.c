@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -13,7 +14,7 @@
 #define LISTEN_PORT 8001
 #define FAILURE (-1)
 
-int runserver(char *ipaddr, int port, bool echo_locally);
+int runserver(char *ipaddr, int port, FILE *local_file);
 void print_client_sockaddr(struct sockaddr_in *client);
 
 void print_client_sockaddr(struct sockaddr_in *client)
@@ -43,7 +44,12 @@ static void print_server_addr_and_port(const char *ipaddr, int port)
 	return;
 }
 
-static void do_echo(int fd, char *buf, int size, bool echo_locally)
+struct server_args {
+	int sockfd;
+	FILE *local_file;
+};
+
+static void do_echo(int fd, char *buf, int size, FILE *local_file)
 {
 	int i, j, k;
 
@@ -51,7 +57,7 @@ static void do_echo(int fd, char *buf, int size, bool echo_locally)
 		return;
 
 	while ((i = recv(fd, buf, size, 0)) > 0) {
-		if (echo_locally)
+		if (local_file)
 			fwrite(buf, 1, i, stdout);
 
 		for (k = 0; k != i; k += j) {
@@ -69,24 +75,50 @@ static void do_echo(int fd, char *buf, int size, bool echo_locally)
 		fprintf(stderr, "Read error: %d\n", errno);
 
 err:
-	close(fd);
+	if (fd >= 0)
+		close(fd);
+	/*
+	 * closing local file stream is not needed
+	 * since it's common to all the threads
+	 */
 	return;
+}
+
+static void *start_server_thread(void *arg)
+{
+	char *buf = NULL;
+	const int size = READBUF_SIZE;
+	struct server_args *s = arg;
+	if (s == NULL)
+		goto err;
+
+	buf = malloc(size);
+	if (buf == NULL) {
+		fprintf(stderr, "Memory allocation failed\n");
+		goto err;
+	}
+
+	do_echo(s->sockfd, buf, size, s->local_file);
+	free(buf);
+err:
+	return NULL;
 }
 
 /*
  * This serer can handle only one client at a time
  */
-int runserver(char *ipaddr, int port, bool echo_locally)
+int runserver(char *ipaddr, int port, FILE *local_file)
 {
 	int sockfd = -1;
 	int new_fd = -1;
-	char *buf = NULL;
+	struct server_args sargs = { 0 };
 	struct in_addr ip = { 0 };
 	struct sockaddr_in server = { 0 };
 	struct sockaddr_in client = { 0 };
+	pthread_t tinfo;
 	socklen_t clnt_len;
 
-	port = port ? port : LISTEN_PORT;
+	sargs.local_file = local_file;
 
 	if (ipaddr == NULL) {
 		ip.s_addr = htonl(INADDR_ANY);
@@ -114,12 +146,6 @@ int runserver(char *ipaddr, int port, bool echo_locally)
 		goto err;
 	}
 
-	buf = malloc(READBUF_SIZE);
-	if (buf == NULL) {
-		fprintf(stderr, "Memory allocation failed\n");
-		goto err;
-	}
-
 	while (true) {
 		print_server_addr_and_port(ipaddr, port);
 
@@ -133,12 +159,12 @@ int runserver(char *ipaddr, int port, bool echo_locally)
 		}
 
 		print_client_sockaddr(&client);
-		do_echo(new_fd, buf, READBUF_SIZE, echo_locally);
+		sargs.sockfd = new_fd;
+		memset(&tinfo, 0, sizeof(tinfo));
+		pthread_create(&tinfo, NULL, start_server_thread, &sargs);
 	}
 
 err:
-	free(buf);
-
 	if (sockfd > -1)
 		close(sockfd);
 
@@ -150,6 +176,8 @@ int main(int argc, char *argv[])
 	int port = 0;
 	char *ip = NULL;
 	bool echo_locally = false;
+	FILE *local_file = NULL;
+
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "-e") == 0) {
 			/* Echo locally */
@@ -166,5 +194,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	return runserver(ip, port, echo_locally);
+	port = port ? port : LISTEN_PORT;
+	local_file = echo_locally ? stdout : NULL;
+
+	return runserver(ip, port, local_file);
 }
