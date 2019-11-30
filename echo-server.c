@@ -116,7 +116,14 @@ int runserver(char *ipaddr, int port, FILE *local_file)
 	struct sockaddr_in server = { 0 };
 	struct sockaddr_in client = { 0 };
 	pthread_t tinfo;
+	pthread_attr_t tattr;
 	socklen_t clnt_len;
+
+	if (pthread_attr_init(&tattr) != 0 ||
+	    pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED) != 0) {
+		fprintf(stderr, "Thread attributes initialization failed");
+		goto err;
+	}
 
 	sargs.local_file = local_file;
 
@@ -161,7 +168,7 @@ int runserver(char *ipaddr, int port, FILE *local_file)
 		print_client_sockaddr(&client);
 		sargs.sockfd = new_fd;
 		memset(&tinfo, 0, sizeof(tinfo));
-		pthread_create(&tinfo, NULL, start_server_thread, &sargs);
+		pthread_create(&tinfo, &tattr, start_server_thread, &sargs);
 	}
 
 err:
