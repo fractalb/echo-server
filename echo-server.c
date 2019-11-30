@@ -8,7 +8,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define READBUF_SIZE 20
+#define READBUF_SIZE 32
 #define LISTEN_BACKLOG 2
 #define LISTEN_PORT 8001
 #define FAILURE (-1)
@@ -47,10 +47,10 @@ static void do_echo(int fd, char *buf, int size, bool echo_locally)
 {
 	int i, j, k;
 
-	if (fd < 0 || buf == NULL || size < 2)
+	if (fd < 0 || buf == NULL || size < 1)
 		return;
 
-	while ((i = recv(fd, buf, READBUF_SIZE, 0)) > 0) {
+	while ((i = recv(fd, buf, size, 0)) > 0) {
 		if (echo_locally)
 			fwrite(buf, 1, i, stdout);
 
