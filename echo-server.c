@@ -73,6 +73,9 @@ err:
 	return;
 }
 
+/*
+ * This serer can handle only one client at a time
+ */
 int runserver(char *ipaddr, int port, bool echo_locally)
 {
 	int sockfd = -1;
@@ -111,12 +114,7 @@ int runserver(char *ipaddr, int port, bool echo_locally)
 		goto err;
 	}
 
-	/*
-	 * READBUF_SIZE + 1 for NUL('\0') character
-	 * This same buffer is reused to read data from
-	 * all the clients. We handle only one client at a time
-	 */
-	buf = malloc(READBUF_SIZE + 1);
+	buf = malloc(READBUF_SIZE);
 	if (buf == NULL) {
 		fprintf(stderr, "Memory allocation failed\n");
 		goto err;
