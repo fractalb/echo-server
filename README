@@ -11,6 +11,5 @@ Run make inside the folder and execute the binary as shown below.
 	'xxx' => port to listen on. Default is 8001
 
 Limitations:
-    - can handle only a single connection.
     - Works with IPv4 addresses only
 

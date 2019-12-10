@@ -104,9 +104,6 @@ err:
 	return NULL;
 }
 
-/*
- * This serer can handle only one client at a time
- */
 int runserver(char *ipaddr, int port, FILE *local_file)
 {
 	int sockfd = -1;
@@ -196,7 +193,7 @@ int main(int argc, char *argv[])
 		} else if (port == 0) {
 			port = atoi(argv[i]);
 		} else {
-			fprintf(stderr, "malformed command line\n");
+			fprintf(stderr, "Error parsing command line\n");
 			return FAILURE;
 		}
 	}
