@@ -14,10 +14,14 @@
 #define LISTEN_PORT 8001
 #define FAILURE (-1)
 
-int runserver(char *ipaddr, int port, FILE *local_file);
-void print_client_sockaddr(struct sockaddr_in *client);
+int runserver(char *ipaddr, int port, FILE *file_out);
+void print_sockaddr(struct sockaddr_in *client);
 
-void print_client_sockaddr(struct sockaddr_in *client)
+/**
+ * Prints the client's socket address ip+port) when a
+ * client connection is successfully established
+ */
+void print_sockaddr(struct sockaddr_in *client)
 {
 	char buf[INET_ADDRSTRLEN];
 	const void *ret;
@@ -46,10 +50,14 @@ static void print_server_addr_and_port(const char *ipaddr, int port)
 
 struct server_args {
 	int sockfd;
-	FILE *local_file;
+	FILE *file_out;
 };
 
-static void do_echo(int fd, char *buf, int size, FILE *local_file)
+/**
+ * Read data from the socket fd and echo it back
+ * Write the data from client to file_out (if not NULL)
+ */
+static void do_echo(int fd, char *buf, int size, FILE *file_out)
 {
 	int i, j, k;
 
@@ -57,8 +65,8 @@ static void do_echo(int fd, char *buf, int size, FILE *local_file)
 		return;
 
 	while ((i = recv(fd, buf, size, 0)) > 0) {
-		if (local_file)
-			fwrite(buf, 1, i, stdout);
+		if (file_out)
+			fwrite(buf, 1, i, file_out);
 
 		for (k = 0; k != i; k += j) {
 			if ((j = send(fd, buf + k, i - k, 0)) < 0) {
@@ -98,20 +106,26 @@ static void *start_server_thread(void *arg)
 		goto err;
 	}
 
-	do_echo(s->sockfd, buf, size, s->local_file);
+	do_echo(s->sockfd, buf, size, s->file_out);
 	free(buf);
 err:
 	return NULL;
 }
 
-int runserver(char *ipaddr, int port, FILE *local_file)
+/**
+ * Create a server listening on `ipaddr`:`port`
+ * write data received from client to `file_out`
+ */
+int runserver(char *ipaddr, int port, FILE *file_out)
 {
-	int sockfd = -1;
-	int new_fd = -1;
-	struct server_args sargs = { 0 };
-	struct in_addr ip = { 0 };
+	struct server_args sargs  = { .file_out = file_out };
 	struct sockaddr_in server = { 0 };
 	struct sockaddr_in client = { 0 };
+	struct in_addr ip         = { 0 };
+
+	int sockfd = -1;
+	int new_fd = -1;
+
 	pthread_t tinfo;
 	pthread_attr_t tattr;
 	socklen_t clnt_len;
@@ -122,8 +136,6 @@ int runserver(char *ipaddr, int port, FILE *local_file)
 		goto err;
 	}
 
-	sargs.local_file = local_file;
-
 	if (ipaddr == NULL) {
 		ip.s_addr = htonl(INADDR_ANY);
 	} else if (inet_pton(AF_INET, ipaddr, &ip) != 1) {
@@ -131,6 +143,7 @@ int runserver(char *ipaddr, int port, FILE *local_file)
 		goto err;
 	}
 
+	/* Create server socket */
 	if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
 		fprintf(stderr, "Unable to create a socket. errno=%d\n", errno);
 		goto err;
@@ -141,7 +154,7 @@ int runserver(char *ipaddr, int port, FILE *local_file)
 	server.sin_addr.s_addr = ip.s_addr;
 
 	if (bind(sockfd, (struct sockaddr *)&server, sizeof(server))) {
-		fprintf(stderr, "Bind failed. errno=%d\n", errno);
+		fprintf(stderr, "Socket bind failed. errno=%d\n", errno);
 		goto err;
 	}
 
@@ -162,7 +175,7 @@ int runserver(char *ipaddr, int port, FILE *local_file)
 			goto err;
 		}
 
-		print_client_sockaddr(&client);
+		print_sockaddr(&client); /* print the client address on stdout */
 		sargs.sockfd = new_fd;
 		memset(&tinfo, 0, sizeof(tinfo));
 		pthread_create(&tinfo, &tattr, start_server_thread, &sargs);
@@ -180,7 +193,7 @@ int main(int argc, char *argv[])
 	int port = 0;
 	char *ip = NULL;
 	bool echo_locally = false;
-	FILE *local_file = NULL;
+	FILE *file_out = NULL;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "-e") == 0) {
@@ -199,7 +212,7 @@ int main(int argc, char *argv[])
 	}
 
 	port = port ? port : LISTEN_PORT;
-	local_file = echo_locally ? stdout : NULL;
+	file_out = echo_locally ? stdout : NULL;
 
-	return runserver(ip, port, local_file);
+	return runserver(ip, port, file_out);
 }
