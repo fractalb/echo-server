@@ -12,4 +12,6 @@ Run make inside the folder and execute the binary as shown below.
 
 Limitations:
     - Works with IPv4 addresses only
+    - No daemon mode. Runs only in foreground
+    - Only for quick testing server reachability
 
