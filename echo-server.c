@@ -48,28 +48,29 @@ static void print_server_addr_and_port(const char *ipaddr, int port)
 	return;
 }
 
-struct server_args {
+struct client_args {
 	int sockfd;
 	FILE *file_out;
 };
 
 /**
- * Read data from the socket fd and echo it back
- * Write the data from client to file_out (if not NULL)
+ * Read data from the socket fd and echo it back to the same `sockfd`
+ * `file_out`, if not NULL, is used for logging the data
+ * `buf` temporarily holds read data before echoing back
  */
-static void do_echo(int fd, char *buf, int size, FILE *file_out)
+static void do_echo(int sockfd, char *buf, int size, FILE *file_out)
 {
 	int i, j, k;
 
-	if (fd < 0 || buf == NULL || size < 1)
+	if (sockfd < 0 || buf == NULL || size < 1)
 		return;
 
-	while ((i = recv(fd, buf, size, 0)) > 0) {
+	while ((i = recv(sockfd, buf, size, 0)) > 0) {
 		if (file_out)
 			fwrite(buf, 1, i, file_out);
 
 		for (k = 0; k != i; k += j) {
-			if ((j = send(fd, buf + k, i - k, 0)) < 0) {
+			if ((j = send(sockfd, buf + k, i - k, 0)) < 0) {
 				fprintf(stderr, "Send failure. errno=%d\n",
 					errno);
 				goto err;
@@ -83,30 +84,27 @@ static void do_echo(int fd, char *buf, int size, FILE *file_out)
 		fprintf(stderr, "Read error: %d\n", errno);
 
 err:
-	if (fd >= 0)
-		close(fd);
-	/*
-	 * closing local file stream is not needed
-	 * since it's common to all the threads
-	 */
 	return;
 }
 
-static void *start_server_thread(void *arg)
+static void *start_server_thread(void *client)
 {
-	char *buf = NULL;
+	const struct client_args *cl = client;
 	const int size = READBUF_SIZE;
-	struct server_args *s = arg;
-	if (s == NULL)
+	char *buf =  malloc(size);
+
+	if (cl == NULL)
 		goto err;
 
-	buf = malloc(size);
 	if (buf == NULL) {
 		fprintf(stderr, "Memory allocation failed\n");
 		goto err;
 	}
 
-	do_echo(s->sockfd, buf, size, s->file_out);
+	/* Start echoing */
+	do_echo(cl->sockfd, buf, size, cl->file_out);
+
+	close(cl->sockfd);
 	free(buf);
 err:
 	return NULL;
@@ -118,7 +116,7 @@ err:
  */
 int runserver(char *ipaddr, int port, FILE *file_out)
 {
-	struct server_args sargs  = { .file_out = file_out };
+	struct client_args clnt_args  = { .file_out = file_out };
 	struct sockaddr_in server = { 0 };
 	struct sockaddr_in client = { 0 };
 	struct in_addr ip         = { 0 };
@@ -128,7 +126,7 @@ int runserver(char *ipaddr, int port, FILE *file_out)
 
 	pthread_t tinfo;
 	pthread_attr_t tattr;
-	socklen_t clnt_len;
+	socklen_t client_len;
 
 	if (pthread_attr_init(&tattr) != 0 ||
 	    pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED) != 0) {
@@ -136,6 +134,7 @@ int runserver(char *ipaddr, int port, FILE *file_out)
 		goto err;
 	}
 
+	/* local IP address to lisdten on */
 	if (ipaddr == NULL) {
 		ip.s_addr = htonl(INADDR_ANY);
 	} else if (inet_pton(AF_INET, ipaddr, &ip) != 1) {
@@ -150,7 +149,7 @@ int runserver(char *ipaddr, int port, FILE *file_out)
 	}
 
 	server.sin_family = AF_INET;
-	server.sin_port = htons(port);
+	server.sin_port = htons(port); /* local port to listen on */
 	server.sin_addr.s_addr = ip.s_addr;
 
 	if (bind(sockfd, (struct sockaddr *)&server, sizeof(server))) {
@@ -166,22 +165,24 @@ int runserver(char *ipaddr, int port, FILE *file_out)
 	while (true) {
 		print_server_addr_and_port(ipaddr, port);
 
-		clnt_len = sizeof(client);
-		memset(&client, 0, clnt_len);
+		/* client socket struct to store the client details */
+		client_len = sizeof(client);
+		memset(&client, 0, client_len);
 
-		new_fd = accept(sockfd, (struct sockaddr *)&client, &clnt_len);
+		new_fd = accept(sockfd, (struct sockaddr *)&client, &client_len);
 		if (new_fd < 0) {
 			fprintf(stderr, "Accept failed. errno=%d\n", errno);
 			goto err;
 		}
 
 		print_sockaddr(&client); /* print the client address on stdout */
-		sargs.sockfd = new_fd;
+		clnt_args.sockfd = new_fd;
 		memset(&tinfo, 0, sizeof(tinfo));
-		pthread_create(&tinfo, &tattr, start_server_thread, &sargs);
+		pthread_create(&tinfo, &tattr, start_server_thread, &clnt_args);
 	}
 
 err:
+	/* Close the listening socket */
 	if (sockfd > -1)
 		close(sockfd);
 
