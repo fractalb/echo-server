@@ -14,86 +14,86 @@
 #define LISTEN_PORT 8001
 #define FAILURE (-1)
 
-int runserver(char *ipaddr, int port, FILE *file_out);
-void print_sockaddr(struct sockaddr_in *client);
+struct client_conn {
+	int sockfd;
+	struct sockaddr_in sockaddr;
+	FILE *file_out;
+	char ipaddr_string[INET_ADDRSTRLEN];
+};
 
-/**
- * Prints the client's socket address ip+port) when a
- * client connection is successfully established
- */
-void print_sockaddr(struct sockaddr_in *client)
+static const char *sockaddr_to_string(struct sockaddr *sockaddr, char *buf,
+				      int size)
 {
-	char buf[INET_ADDRSTRLEN];
-	const void *ret;
+	struct in_addr *ipv4;
+	struct in6_addr  *ipv6;
+	const char *ret = NULL;
 
-	ret = inet_ntop(AF_INET, &client->sin_addr, buf, sizeof(buf));
-	if (ret == NULL) {
-		fprintf(stderr,
-			"Connection established, but unable to get the client details.\n");
-		return;
+	switch(sockaddr->sa_family) {
+	case AF_INET:
+		ipv4 = &((struct sockaddr_in *)sockaddr)->sin_addr;
+		ret = inet_ntop(AF_INET, ipv4, buf, size);
+		break;
+	case AF_INET6:
+		ipv6 = &((struct sockaddr_in6 *)sockaddr)->sin6_addr;
+		ret = inet_ntop(AF_INET6, ipv6, buf, size);
+		break;
+	default:
+		ret = NULL;
 	}
 
-	printf("Accepted a connection from %s:%d\n", buf,
-	       ntohs(client->sin_port));
-	return;
+	return ret;
 }
-
-static void print_server_addr_and_port(const char *ipaddr, int port)
-{
-	if (ipaddr)
-		printf("Listening on %s:%d\n", ipaddr, port);
-	else
-		printf("Listening on port %d\n", port);
-
-	return;
-}
-
-struct client_args {
-	int sockfd;
-	FILE *file_out;
-};
 
 /**
  * Read data from the socket fd and echo it back to the same `sockfd`
  * `file_out`, if not NULL, is used for logging the data
  * `buf` temporarily holds read data before echoing back
  */
-static void do_echo(int sockfd, char *buf, int size, FILE *file_out)
+static void do_echo(const struct client_conn *conn, char *buf, int size)
 {
-	int i, j, k;
+	const char *ipaddr_string = conn->ipaddr_string;
+	FILE *fout = conn->file_out;
+	int sockfd = conn->sockfd;
+	int read_bytes;
+	int sent_bytes;
+	int i;
 
 	if (sockfd < 0 || buf == NULL || size < 1)
 		return;
 
-	while ((i = recv(sockfd, buf, size, 0)) > 0) {
-		if (file_out)
-			fwrite(buf, 1, i, file_out);
+	while ((read_bytes = recv(sockfd, buf, size, 0)) > 0) {
+		if (fout)
+			fwrite(buf, 1, read_bytes, fout);
 
-		for (k = 0; k != i; k += j) {
-			if ((j = send(sockfd, buf + k, i - k, 0)) < 0) {
-				fprintf(stderr, "Send failure. errno=%d\n",
-					errno);
-				goto err;
+		/* repeatedly try until we send out all the
+		 * `read_bytes` */
+		for (sent_bytes = 0; sent_bytes != read_bytes;
+		     sent_bytes += i) {
+			if ((i = send(sockfd, buf + sent_bytes,
+				      read_bytes - sent_bytes, 0)) < 0) {
+				goto err_write;
 			}
 		}
 	}
 
-	if (i == 0)
-		printf("\nConnection closed\n");
-	else
-		fprintf(stderr, "Read error: %d\n", errno);
+	if (read_bytes != 0)
+		fprintf(stderr, "Read error:%d client %s:%d\n", errno,
+			ipaddr_string, conn->sockaddr.sin_port);
+	return;
 
-err:
+err_write:
+	fprintf(stderr, "Write error errno:%d client %s:%d\n", errno,
+		ipaddr_string, conn->sockaddr.sin_port);
 	return;
 }
 
 static void *start_server_thread(void *client)
 {
-	const struct client_args *cl = client;
+	const struct client_conn *conn = client;
 	const int size = READBUF_SIZE;
-	char *buf =  malloc(size);
+	char *buf = malloc(size);
 
-	if (cl == NULL)
+	if (client == NULL)
 		goto err;
 
 	if (buf == NULL) {
@@ -101,13 +101,108 @@ static void *start_server_thread(void *client)
 		goto err;
 	}
 
-	/* Start echoing */
-	do_echo(cl->sockfd, buf, size, cl->file_out);
+	printf("Accepted a connection from %s:%d\n", conn->ipaddr_string,
+	       conn->sockaddr.sin_port);
 
-	close(cl->sockfd);
-	free(buf);
+	/* Start echoing */
+	do_echo(conn, buf, size);
+
+	printf("Connection closed %s:%d\n", conn->ipaddr_string,
+	       conn->sockaddr.sin_port);
+	close(conn->sockfd);
 err:
+	free(client);
+	free(buf);
 	return NULL;
+}
+
+static struct client_conn *
+init_client_conn(int sockfd, struct sockaddr *sockaddr, FILE *file_out)
+{
+	struct client_conn *client = malloc(sizeof(*client));
+	if (client == NULL)
+		return NULL;
+
+	client->sockfd = sockfd;
+	client->file_out = file_out;
+	memcpy(&client->sockaddr, sockaddr, sizeof(*sockaddr));
+	sockaddr_to_string(sockaddr, client->ipaddr_string, INET_ADDRSTRLEN);
+	return client;
+}
+
+static int init_server(char *ipaddr, int port, struct sockaddr_in *server)
+{
+	struct in_addr local_ip;
+	int server_fd = -1;
+
+	memset(server, 0, sizeof(*server));
+	memset(&local_ip, 0, sizeof(local_ip));
+
+	/* local IP address to lisdten on */
+	if (ipaddr == NULL)
+		ipaddr = "0.0.0.0"; /* Any address */
+
+	if (inet_pton(AF_INET, ipaddr, &local_ip) != 1) {
+		fprintf(stderr, "%s : Not a valid IPv4 address", ipaddr);
+		goto err;
+	}
+
+	/* Create server socket */
+	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		fprintf(stderr, "Unable to create a socket. errno=%d\n", errno);
+		goto err;
+	}
+
+	server->sin_family = AF_INET;
+	server->sin_port = htons(port); /* local port to listen on */
+	server->sin_addr.s_addr = local_ip.s_addr;
+
+	if (bind(server_fd, (struct sockaddr *)server, sizeof(*server))) {
+		fprintf(stderr, "Socket bind failed. errno=%d\n", errno);
+		close(server_fd);
+		goto err;
+	}
+
+	if (listen(server_fd, LISTEN_BACKLOG)) {
+		fprintf(stderr, "Listen failed. errno=%d\n", errno);
+		close(server_fd);
+		goto err;
+	}
+
+	printf("Listening on %s:%d\n", ipaddr, port);
+
+	return server_fd;
+
+err:
+	return -1;
+}
+
+struct client_conn *accept_client_conn(int server_fd, FILE *file_out)
+{
+	struct client_conn *client = NULL;
+	struct sockaddr client_sock;
+	socklen_t sock_len;
+	int client_fd = -1;
+
+	sock_len = sizeof(client_sock);
+	memset(&client_sock, 0, sock_len);
+	client_fd = accept(server_fd, &client_sock, &sock_len);
+
+	if (client_fd < 0) {
+		fprintf(stderr, "Accept failed. errno:%d\n", errno);
+		goto err;
+	}
+
+	client = init_client_conn(client_fd, &client_sock, file_out);
+
+	if (client == NULL) {
+		fprintf(stderr, "Internal error:%d. closing fd=%d\n", errno,
+			client_fd);
+		close(client_fd);
+	}
+
+err:
+	return client;
 }
 
 /**
@@ -116,75 +211,33 @@ err:
  */
 int runserver(char *ipaddr, int port, FILE *file_out)
 {
-	struct client_args clnt_args  = { .file_out = file_out };
-	struct sockaddr_in server = { 0 };
-	struct sockaddr_in client = { 0 };
-	struct in_addr ip         = { 0 };
-
-	int sockfd = -1;
-	int new_fd = -1;
-
-	pthread_t tinfo;
+	struct sockaddr_in server_sock;
+	struct client_conn *client;
 	pthread_attr_t tattr;
-	socklen_t client_len;
+	pthread_t tinfo;
+	int server_fd = -1;
+
+	server_fd = init_server(ipaddr, port, &server_sock);
+
+	if (server_fd < 0)
+		goto err;
 
 	if (pthread_attr_init(&tattr) != 0 ||
-	    pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED) != 0) {
-		fprintf(stderr, "Thread attributes initialization failed");
+	    pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED) != 0)
 		goto err;
-	}
-
-	/* local IP address to lisdten on */
-	if (ipaddr == NULL) {
-		ip.s_addr = htonl(INADDR_ANY);
-	} else if (inet_pton(AF_INET, ipaddr, &ip) != 1) {
-		fprintf(stderr, "%s : Not a valid IPv4 address", ipaddr);
-		goto err;
-	}
-
-	/* Create server socket */
-	if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-		fprintf(stderr, "Unable to create a socket. errno=%d\n", errno);
-		goto err;
-	}
-
-	server.sin_family = AF_INET;
-	server.sin_port = htons(port); /* local port to listen on */
-	server.sin_addr.s_addr = ip.s_addr;
-
-	if (bind(sockfd, (struct sockaddr *)&server, sizeof(server))) {
-		fprintf(stderr, "Socket bind failed. errno=%d\n", errno);
-		goto err;
-	}
-
-	if (listen(sockfd, LISTEN_BACKLOG)) {
-		fprintf(stderr, "Listen failed. errno=%d\n", errno);
-		goto err;
-	}
 
 	while (true) {
-		print_server_addr_and_port(ipaddr, port);
-
-		/* client socket struct to store the client details */
-		client_len = sizeof(client);
-		memset(&client, 0, client_len);
-
-		new_fd = accept(sockfd, (struct sockaddr *)&client, &client_len);
-		if (new_fd < 0) {
-			fprintf(stderr, "Accept failed. errno=%d\n", errno);
+		client = accept_client_conn(server_fd, file_out);
+		if (client == NULL)
 			goto err;
-		}
-
-		print_sockaddr(&client); /* print the client address on stdout */
-		clnt_args.sockfd = new_fd;
 		memset(&tinfo, 0, sizeof(tinfo));
-		pthread_create(&tinfo, &tattr, start_server_thread, &clnt_args);
+		pthread_create(&tinfo, &tattr, start_server_thread, client);
 	}
 
 err:
 	/* Close the listening socket */
-	if (sockfd > -1)
-		close(sockfd);
+	if (server_fd > -1)
+		close(server_fd);
 
 	return FAILURE;
 }
@@ -192,7 +245,7 @@ err:
 int main(int argc, char *argv[])
 {
 	int port = 0;
-	char *ip = NULL;
+	char *local_ip = NULL;
 	bool echo_locally = false;
 	FILE *file_out = NULL;
 
@@ -203,7 +256,7 @@ int main(int argc, char *argv[])
 		} else if (strcmp(argv[i], "-ip") == 0) {
 			i++;
 			/* port number. listen on this port */
-			ip = argv[i];
+			local_ip = argv[i];
 		} else if (port == 0) {
 			port = atoi(argv[i]);
 		} else {
@@ -215,5 +268,5 @@ int main(int argc, char *argv[])
 	port = port ? port : LISTEN_PORT;
 	file_out = echo_locally ? stdout : NULL;
 
-	return runserver(ip, port, file_out);
+	runserver(local_ip, port, file_out);
 }
