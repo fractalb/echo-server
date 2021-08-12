@@ -12,6 +12,7 @@
 #define READBUF_SIZE 32
 #define LISTEN_BACKLOG 2
 #define DEFAULT_LISTEN_PORT 8001
+#define SUCCESS (0)
 #define FAILURE (-1)
 
 struct client_conn {
@@ -247,22 +248,29 @@ int main(int argc, char *argv[])
 	int port = DEFAULT_LISTEN_PORT;
 	char *local_ip = NULL;
 	FILE *file_out = NULL;
+	char *end;
 
 	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "-e") == 0) {
+		if (strcmp(argv[i], "--echo") == 0) {
 			/* Echo locally */
 			file_out = stdout;
-		} else if (strcmp(argv[i], "-ip") == 0) {
+		} else if (i < argc - 1 && strcmp(argv[i], "--ip") == 0) {
 			/* bind to this IP address */
 			local_ip = argv[++i];
 		} else if (i == argc-1) {
 			/* port number. listen on this port */
-			port = atoi(argv[i]);
+			errno = 0;
+			port = strtol(argv[i], &end, 10);
+			if (*end != '\0' || port == 0 || errno != 0)
+				goto err;
 		} else {
-			fprintf(stderr, "Error parsing command line\n");
-			return FAILURE;
+			goto err;
 		}
 	}
 
 	runserver(local_ip, port, file_out);
+	return SUCCESS;
+err:
+	fprintf(stderr, "Error parsing command line\n");
+	return FAILURE;
 }
