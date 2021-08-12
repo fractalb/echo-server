@@ -253,9 +253,10 @@ int main(int argc, char *argv[])
 			/* Echo locally */
 			file_out = stdout;
 		} else if (strcmp(argv[i], "-ip") == 0) {
-			/* port number. listen on this port */
+			/* bind to this IP address */
 			local_ip = argv[++i];
 		} else if (i == argc-1) {
+			/* port number. listen on this port */
 			port = atoi(argv[i]);
 		} else {
 			fprintf(stderr, "Error parsing command line\n");
